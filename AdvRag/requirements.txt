@@ -1,0 +1,87 @@
+# ============================================================
+# requirements.txt
+# Agentic Hybrid RAG — Groq + Mixedbread + Pinecone + SQLite
+# Python 3.11+  |  Windows  |  Intel i3 / 12 GB RAM
+# ============================================================
+
+# ── LlamaIndex Core ─────────────────────────────────────────
+# Covers: FunctionCallingAgentWorker, AgentRunner, ChatMemoryBuffer,
+# VectorStoreIndex, StorageContext, Settings, SQLDatabase,
+# NLSQLTableQueryEngine, QueryFusionRetriever, RetrieverQueryEngine,
+# QueryEngineTool, ToolMetadata, SentenceSplitter, IngestionPipeline,
+# SimpleDocumentStore, TitleExtractor, SummaryExtractor,
+# KeywordExtractor, QuestionsAnsweredExtractor, PandasQueryEngine
+llama-index-core>=0.11.0
+
+# ── LLM: Groq ────────────────────────────────────────────────
+# llm.py: from llama_index.llms.groq import Groq
+llama-index-llms-groq>=0.3.0
+
+# ── Embeddings: Mixedbread AI ────────────────────────────────
+# vector_store.py: from llama_index.embeddings.mixedbreadai import MixedbreadAIEmbedding
+llama-index-embeddings-mixedbreadai>=0.2.0
+
+# ── Reranker: Mixedbread AI ───────────────────────────────────
+# vector_store.py: from llama_index.postprocessor.mixedbreadai_rerank import MixedbreadAIRerank
+llama-index-postprocessor-mixedbreadai-rerank>=0.2.0
+
+# ── Vector Store: Pinecone Serverless ────────────────────────
+# vector_store.py: from llama_index.vector_stores.pinecone import PineconeVectorStore
+llama-index-vector-stores-pinecone>=0.3.0
+# vector_store.py: from pinecone import Pinecone, ServerlessSpec
+pinecone>=5.0.0
+
+# ── Document Loaders ─────────────────────────────────────────
+# loader.py: from llama_index.readers.file import (
+#                PyMuPDFReader, DocxReader, MarkdownReader, TextReader)
+llama-index-readers-file>=0.3.0
+# Backend for PyMuPDFReader (imported internally as `fitz`)
+pymupdf>=1.24.0
+# Backend for DocxReader text extraction
+docx2txt>=0.8
+# Used directly in helpers.py for DOCX heading-style extraction
+python-docx>=1.1.0
+
+# ── Structured Data ──────────────────────────────────────────
+# sql_store.py: from sqlalchemy import create_engine
+sqlalchemy>=2.0.0
+# sql_store.py + helpers.py: import pandas as pd
+pandas>=2.2.0
+# helpers.py: pd.read_excel() requires openpyxl for .xlsx files
+openpyxl>=3.1.0
+
+# ── Config ───────────────────────────────────────────────────
+# config.py: from pydantic_settings import BaseSettings, SettingsConfigDict
+pydantic-settings>=2.0.0
+
+# ── FastAPI Stack ─────────────────────────────────────────────
+# app.py: from fastapi import FastAPI, HTTPException, UploadFile, ...
+fastapi>=0.111.0
+# [standard] pulls in uvloop + httptools for better async throughput
+uvicorn[standard]>=0.30.0
+# app.py: UploadFile / File() multipart parsing
+python-multipart>=0.0.9
+
+# ── Utilities ─────────────────────────────────────────────────
+# All files: from dotenv import load_dotenv
+python-dotenv>=1.0.0
+# app.py: aiofiles used by background file cleanup tasks
+aiofiles>=23.0.0
+
+# ── Optional: LlamaParse ─────────────────────────────────────
+# helpers.py: from llama_parse import LlamaParse
+# Only needed when LLAMA_CLOUD_API_KEY is set. The code guards against
+# ImportError at runtime, so this stays commented out by default.
+# llama-parse>=0.4.0
+
+# ─────────────────────────────────────────────────────────────
+# REMOVED vs. previous requirements.txt — reasons:
+#
+# llama-index-llms-google-genai
+# llama-index-embeddings-google-genai
+# google-generativeai
+#   All Google/Gemini packages removed. The codebase now uses Groq for
+#   LLM inference and Mixedbread AI for embeddings and reranking.
+#   Installing unused Google packages adds ~80 MB and creates import
+#   ambiguity if both google-genai and groq clients are initialised.
+# ─────────────────────────────────────────────────────────────
