@@ -210,11 +210,7 @@ def _table_docs_to_nodes(table_docs: List[Document]) -> List[TextNode]:
 # ---------------------------------------------------------------------------
 
 def _make_splitter() -> SentenceSplitter:
-    """
-    SentenceSplitter is the LlamaIndex-native chunker for IngestionPipeline.
-    Splits on sentence boundaries rather than arbitrary character counts,
-    which preserves semantic units and leads to better retrieval quality.
-    """
+
     return SentenceSplitter(
         chunk_size=settings.CHUNK_SIZE,
         chunk_overlap=settings.CHUNK_OVERLAP,

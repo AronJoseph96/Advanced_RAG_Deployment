@@ -45,8 +45,7 @@ class Settings(BaseSettings):
 
     # ── Model identifiers ───────────────────────────────────────────────────
     # LLM served by Groq (fast inference, OpenAI-compatible API)
-    #LLM_MODEL: str = "llama-3.3-70b-versatile"
-    LLM_MODEL: str = "llama-3.1-8b-instant"
+    LLM_MODEL: str = "llama-3.3-70b-versatile"
     
     # Mixedbread embedding model — 1024-dim, top MTEB retrieval performance.
     # FIX: was "mixedbread-ai/mxbai-wholembed-v3" which does not exist.

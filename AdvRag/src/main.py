@@ -7,7 +7,7 @@ Architecture
 ------------
                     ┌────────────────────────────────────┐
   User query ──────►│        FunctionAgent               │
-                    │   (Groq — llama-3.1-8b-instant)    │
+                    │   (Groq — llama-3.3-70b-versatile) │
                     └──────┬─────────────────┬───────────┘
                            │                 │
               ┌────────────▼──┐   ┌──────────▼──────────────────┐
@@ -84,14 +84,22 @@ You are an expert research assistant with access to two knowledge sources:
    and research papers using hybrid semantic + keyword retrieval with
    cross-encoder reranking (Mixedbread AI).
    Use this for conceptual, descriptive, or open-ended questions.
+   If the user mentions a document, file, report, section, clause,
+   requirement ID (for example "RS4"), or asks "what is stated", use this
+   tool first.
 
 2. **structured_data_analytics** -- queries a structured SQLite database
    using natural language converted to SQL.
    Use this for numerical, comparative, or filter-based questions
    (counts, averages, rankings, date ranges, specific records).
+   Do not use this for questions about document text or requirement IDs
+   unless the user explicitly asks about uploaded tabular/CSV data.
 
 ## Rules
 - Always pick the most appropriate tool for the question.
+- A request to read or summarize uploaded content is allowed. Do not refuse it
+  as database access; use the appropriate retrieval tool and answer from the
+  returned context.
 - For questions that span both sources, call both tools and synthesise.
 - Cite sources from document metadata (file_name, section_header) when possible.
 - If neither tool returns useful context, say so -- do not hallucinate.
@@ -194,10 +202,17 @@ class RAGAgent:
         """
         self._assert_ready()
         handler = self._agent.run(user_msg=query, memory=self._memory)
+        emitted_delta = False
         async for event in handler.stream_events():
             if isinstance(event, AgentStream):
                 if event.delta:
+                    emitted_delta = True
                     yield event.delta
+        if not emitted_delta:
+            result = await handler
+            text = str(result)
+            if text:
+                yield text
 
     def reset_memory(self) -> None:
         """Clears conversation history for a fresh session."""

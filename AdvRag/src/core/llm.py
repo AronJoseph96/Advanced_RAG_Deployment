@@ -45,8 +45,7 @@ def get_llm(
     Args:
         temperature : Sampling temperature (0.0 = deterministic / best for RAG).
         max_tokens  : Hard cap on output tokens. Capped at 2048 by default to
-                      stay within Groq free-tier TPM limits (llama-3.1-8b-instant
-                      allows 6000 TPM; higher values cause 413 errors).
+                      keep responses bounded during RAG/tool calls.
         model       : Override settings.LLM_MODEL for this call only.
 
     Returns:
