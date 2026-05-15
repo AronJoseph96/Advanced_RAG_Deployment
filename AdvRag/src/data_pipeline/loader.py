@@ -53,6 +53,95 @@ _HEADING_RE = re.compile(
 )
 
 
+def _looks_like_table_line(line: str) -> bool:
+    """
+    Heuristic for table-looking text extracted from PDFs.
+
+    PDF readers usually return tables as plain aligned text. We keep this
+    intentionally conservative and only split runs of at least two table-like
+    lines, so ordinary prose with one wide-spaced line is left alone.
+    """
+    stripped = line.strip()
+    if len(stripped) < 3:
+        return False
+
+    if "|" in stripped:
+        cells = [cell.strip() for cell in stripped.split("|") if cell.strip()]
+        return len(cells) >= 2
+
+    if "\t" in stripped:
+        cells = [cell.strip() for cell in stripped.split("\t") if cell.strip()]
+        return len(cells) >= 2
+
+    cells = [cell.strip() for cell in re.split(r"\s{2,}", stripped) if cell.strip()]
+    return len(cells) >= 4 and all(any(ch.isalnum() for ch in cell) for cell in cells)
+
+
+def _split_pdf_table_blocks(docs: List[LlamaDocument]) -> List[LlamaDocument]:
+    """
+    Splits PDF page text into prose Documents and atomic table Documents.
+
+    Any consecutive run of two or more table-like lines is tagged with
+    content_type="table"; transformation.py will convert that block into one
+    TextNode and bypass SentenceSplitter.
+    """
+    split_docs: List[LlamaDocument] = []
+    table_index = 0
+
+    for doc_index, doc in enumerate(docs):
+        lines = doc.get_content().splitlines()
+        if not lines:
+            split_docs.append(doc)
+            continue
+
+        groups: list[tuple[bool, list[str]]] = []
+        current_is_table: bool | None = None
+        current_lines: list[str] = []
+
+        def flush() -> None:
+            nonlocal current_is_table, current_lines
+            if current_lines:
+                groups.append((bool(current_is_table), current_lines))
+            current_is_table = None
+            current_lines = []
+
+        for line in lines:
+            if not line.strip():
+                current_lines.append(line)
+                continue
+
+            is_table = _looks_like_table_line(line)
+            if current_is_table is None:
+                current_is_table = is_table
+            elif is_table != current_is_table:
+                flush()
+                current_is_table = is_table
+            current_lines.append(line)
+        flush()
+
+        for group_index, (is_table, group_lines) in enumerate(groups):
+            text = "\n".join(group_lines).strip()
+            if not text:
+                continue
+
+            nonempty_count = sum(1 for line in group_lines if line.strip())
+            meta = dict(doc.metadata)
+            meta["block_index"] = group_index
+
+            if is_table and nonempty_count >= 2:
+                meta["content_type"] = "table"
+                meta["table_index"] = table_index
+                meta["doc_id"] = f"{meta.get('doc_id', doc.doc_id)}-table-{table_index}"
+                table_index += 1
+            else:
+                meta["content_type"] = "text"
+                meta["doc_id"] = f"{meta.get('doc_id', doc.doc_id)}-prose-{doc_index}-{group_index}"
+
+            split_docs.append(LlamaDocument(text=text, metadata=meta))
+
+    return split_docs
+
+
 # ---------------------------------------------------------------------------
 # Header extraction
 # ---------------------------------------------------------------------------
@@ -151,9 +240,14 @@ async def aload_documents_from_directory(
         try:
             # Readers are synchronous — offload to thread pool.
             loop = asyncio.get_running_loop()
-            raw_docs: List[LlamaDocument] = await loop.run_in_executor(
-                None, reader.load_data, file_path
-            )
+            if suffix == ".docx":
+                raw_docs: List[LlamaDocument] = await loop.run_in_executor(
+                    None, load_docx_with_tables, file_path
+                )
+            else:
+                raw_docs = await loop.run_in_executor(
+                    None, reader.load_data, file_path
+                )
 
             current_header = "Document Start"
             for doc in raw_docs:
@@ -173,6 +267,9 @@ async def aload_documents_from_directory(
                         ),
                     }
                 )
+
+            if suffix == ".pdf":
+                raw_docs = _split_pdf_table_blocks(raw_docs)
 
             all_docs.extend(raw_docs)
             print(f"[Loader] → {len(raw_docs)} document(s) from '{file_path.name}'")
@@ -211,9 +308,14 @@ async def aload_single_file(file_path: str | Path) -> List[LlamaDocument]:
 
     print(f"[Loader] Reading single file: {path.name}")
     loop = asyncio.get_running_loop()
-    raw_docs: List[LlamaDocument] = await loop.run_in_executor(
-        None, reader.load_data, path
-    )
+    if suffix == ".docx":
+        raw_docs: List[LlamaDocument] = await loop.run_in_executor(
+            None, load_docx_with_tables, path
+        )
+    else:
+        raw_docs = await loop.run_in_executor(
+            None, reader.load_data, path
+        )
 
     current_header = "Document Start"
     for doc in raw_docs:
@@ -232,6 +334,9 @@ async def aload_single_file(file_path: str | Path) -> List[LlamaDocument]:
                 ),
             }
         )
+
+    if suffix == ".pdf":
+        raw_docs = _split_pdf_table_blocks(raw_docs)
 
     return raw_docs
 

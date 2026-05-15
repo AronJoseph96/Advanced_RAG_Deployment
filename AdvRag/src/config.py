@@ -24,9 +24,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve paths relative to this file so they work regardless of cwd.
-SRC_DIR      = Path(__file__).resolve().parent   # src/advrag/
-REPO_ROOT    = SRC_DIR.parent.parent             # src/
-PROJECT_ROOT = REPO_ROOT.parent                  # ADVANCEDRAG - COPY/AdvRag/
+SRC_DIR      = Path(__file__).resolve().parent   
+REPO_ROOT    = SRC_DIR.parent.parent             
 
 
 class Settings(BaseSettings):

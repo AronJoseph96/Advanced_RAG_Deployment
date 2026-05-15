@@ -20,7 +20,7 @@ export async function chatFull(query) {
     const e = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(e.detail || 'Chat request failed');
   }
-  return r.json(); // { query, response }
+  return r.json();
 }
 
 export function chatStream(query, onToken, onDone, onError) {
@@ -36,12 +36,10 @@ export function chatStream(query, onToken, onDone, onError) {
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-
       while (true) {
         if (cancelled) break;
         const { done, value } = await reader.read();
         if (done) break;
-
         const chunk = decoder.decode(value, { stream: true });
         for (const line of chunk.split('\n')) {
           if (!line.startsWith('data: ')) continue;
@@ -53,9 +51,7 @@ export function chatStream(query, onToken, onDone, onError) {
       }
       onDone();
     })
-    .catch((e) => {
-      if (!cancelled) onError(e.message);
-    });
+    .catch((e) => { if (!cancelled) onError(e.message); });
 
   return () => { cancelled = true; };
 }
@@ -65,23 +61,18 @@ export async function uploadDocuments(files, chunkSize = 512, chunkOverlap = 64)
   for (const f of files) form.append('files', f);
   form.append('chunk_size', chunkSize);
   form.append('chunk_overlap', chunkOverlap);
-
-  const r = await fetch(`${BASE}/ingest/documents/upload`, {
-    method: 'POST',
-    body: form,
-  });
+  const r = await fetch(`${BASE}/ingest/documents/upload`, { method: 'POST', body: form });
   if (!r.ok) {
     const e = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(e.detail || 'Upload failed');
   }
-  return r.json(); // { message, count, detail }
+  return r.json();
 }
 
 export async function uploadCSV(file, tableName = '') {
   const form = new FormData();
   form.append('file', file);
   if (tableName) form.append('table_name', tableName);
-
   const r = await fetch(`${BASE}/ingest/csv`, { method: 'POST', body: form });
   if (!r.ok) {
     const e = await r.json().catch(() => ({ detail: r.statusText }));

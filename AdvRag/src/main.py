@@ -1,47 +1,14 @@
 """
 main.py
 -------
-Agentic RAG orchestrator using LlamaIndex's FunctionAgent (v0.14+ workflow API).
+Agentic RAG orchestrator — updated for llama-index-core >= 0.12
+where ReActAgent is a Workflow-based class.
 
-Architecture
-------------
-                    ┌────────────────────────────────────┐
-  User query ──────►│        FunctionAgent               │
-                    │   (Groq — llama-3.3-70b-versatile) │
-                    └──────┬─────────────────┬───────────┘
-                           │                 │
-              ┌────────────▼──┐   ┌──────────▼──────────────────┐
-              │  SQL Tool     │   │  Vector Tool                │
-              │ NLSQLTable    │   │  QueryFusionRetriever (RRF)  │
-              │ QueryEngine   │   │  + Mixedbread Reranker       │
-              └────────────┬──┘   └──────────┬──────────────────┘
-                           │                 │
-                    SQLite DB         Pinecone Serverless
-                   (structured)       (documents / unstructured)
-
-llama-index-core 0.14+ Agent API
-----------------------------------
-  FunctionAgent is constructed directly (no .from_tools classmethod):
-      agent = FunctionAgent(tools=[...], llm=..., system_prompt=...)
-
-  Each call to .run() returns a WorkflowHandler:
-      handler = agent.run(user_msg=query, memory=memory)
-      result  = await handler          # AgentOutput — str(result) is the reply
-
-  Streaming uses handler.stream_events() and filters for AgentStream events:
-      async for ev in handler.stream_events():
-          if isinstance(ev, AgentStream):
-              yield ev.delta
-
-  Conversation memory is a ChatMemoryBuffer kept on the RAGAgent instance
-  and passed into every .run() call so the agent sees prior turns.
-
-Startup sequence
-----------------
-  1. get_llm()              → Groq instance → Settings.llm
-  2. init_vector_store()    → Pinecone index + Mixedbread embed/rerank + tool
-  3. SQLStoreManager        → NLSQLTableQueryEngine + tool
-  4. FunctionAgent(tools=[vector_tool, sql_tool])
+Streaming fix
+-------------
+AgentStream events fire for ALL LLM tokens including Thought/Action/Observation.
+We buffer and only yield tokens that appear after 'Answer:' so the frontend
+never sees internal ReAct reasoning traces.
 """
 
 import os
@@ -50,14 +17,11 @@ from typing import AsyncGenerator, Optional
 
 from dotenv import load_dotenv
 
-# LlamaIndex core
 from llama_index.core import Settings
-from llama_index.core.agent import FunctionAgent
-from llama_index.core.agent.workflow import AgentStream
+from llama_index.core.agent import ReActAgent, AgentStream
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import QueryEngineTool
 
-# Local modules
 from config import settings
 from core.llm import get_llm, warmup_llm
 from storage.vector_store import init_vector_store, aupsert_nodes
@@ -67,10 +31,6 @@ from data_pipeline.transformation import arun_pipeline
 
 load_dotenv()
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 SQLITE_DB_PATH: str = settings.SQLITE_DB_PATH
 
 # ---------------------------------------------------------------------------
@@ -78,33 +38,28 @@ SQLITE_DB_PATH: str = settings.SQLITE_DB_PATH
 # ---------------------------------------------------------------------------
 
 AGENT_SYSTEM_PROMPT = """\
-You are an expert research assistant with access to two knowledge sources:
+You are an expert research assistant. You have access to two tools:
 
-1. **document_knowledge_search** -- searches unstructured documents, reports,
-   and research papers using hybrid semantic + keyword retrieval with
-   cross-encoder reranking (Mixedbread AI).
-   Use this for conceptual, descriptive, or open-ended questions.
-   If the user mentions a document, file, report, section, clause,
-   requirement ID (for example "RS4"), or asks "what is stated", use this
-   tool first.
+1. document_knowledge_search  
+   Use for ANY question about uploaded documents, PDFs, resumes, reports,  
+   policies, or unstructured text. Also use for open-ended or descriptive  
+   questions. Always try this tool first when the user asks about a person,  
+   topic, or file.
 
-2. **structured_data_analytics** -- queries a structured SQLite database
-   using natural language converted to SQL.
-   Use this for numerical, comparative, or filter-based questions
-   (counts, averages, rankings, date ranges, specific records).
-   Do not use this for questions about document text or requirement IDs
-   unless the user explicitly asks about uploaded tabular/CSV data.
+2. structured_data_analytics  
+   Use ONLY for questions about uploaded CSV/spreadsheet data requiring  
+   counts, sums, averages, rankings, or SQL-style filtering.
 
-## Rules
-- Always pick the most appropriate tool for the question.
-- A request to read or summarize uploaded content is allowed. Do not refuse it
-  as database access; use the appropriate retrieval tool and answer from the
-  returned context.
-- For questions that span both sources, call both tools and synthesise.
-- Cite sources from document metadata (file_name, section_header) when possible.
-- If neither tool returns useful context, say so -- do not hallucinate.
-- Be concise, use markdown formatting, and prefer tables for numerical data.
+Rules:
+- Always call a tool before answering. Do not answer from memory alone.
+- For ambiguous queries, prefer document_knowledge_search.
+- Cite the source file name when possible.
+- If a tool returns no results, say so clearly — never hallucinate.
+- Be concise and use markdown where it helps clarity.
 """
+
+# ReAct final answer marker — only tokens after this prefix reach the user
+_ANSWER_PREFIX = "Answer:"
 
 
 # ---------------------------------------------------------------------------
@@ -113,13 +68,13 @@ You are an expert research assistant with access to two knowledge sources:
 
 class RAGAgent:
     def __init__(self):
-        self.llm:          Optional[object]           = None
-        self.sql_manager:  Optional[SQLStoreManager]  = None
-        self.vector_index: Optional[object]           = None
-        self._agent:       Optional[FunctionAgent]    = None
-        self._memory:      Optional[ChatMemoryBuffer] = None
-        self._tools:       list[QueryEngineTool]      = []
-        self._ready:       bool                       = False
+        self.llm:          Optional[object]          = None
+        self.sql_manager:  Optional[SQLStoreManager] = None
+        self.vector_index: Optional[object]          = None
+        self._agent:       Optional[ReActAgent]      = None
+        self._memory:      Optional[ChatMemoryBuffer]= None
+        self._tools:       list                      = []
+        self._ready:       bool                      = False
 
     async def initialise(self) -> None:
         if self._ready:
@@ -127,27 +82,19 @@ class RAGAgent:
 
         print("[Agent] Initialising RAG Agent ...")
 
-        # 1. LLM (Groq) -- set Settings.llm before anything else
         self.llm = get_llm()
         Settings.llm = self.llm
 
-        # 2. Lightweight credential ping (failure is non-fatal -- logged only)
         await warmup_llm(self.llm)
 
-        # 3. Vector store (Pinecone + Mixedbread embed + rerank)
         self.vector_index, _, _, vector_tool = await init_vector_store()
 
-        # 4. SQL store (SQLite)
-        self.sql_manager = SQLStoreManager(
-            llm=self.llm,
-            db_path=SQLITE_DB_PATH,
-        )
+        self.sql_manager = SQLStoreManager(llm=self.llm, db_path=SQLITE_DB_PATH)
         sql_tool = self.sql_manager.get_tool()
 
-        # 5. Build agent and fresh memory buffer
-        self._tools = [vector_tool, sql_tool]
-        self._agent = self._build_agent()
+        self._tools  = [vector_tool, sql_tool]
         self._memory = self._new_memory()
+        self._agent  = self._build_agent()
 
         self._ready = True
         print("[Agent] Ready")
@@ -156,20 +103,21 @@ class RAGAgent:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _build_agent(self) -> FunctionAgent:
+    def _build_agent(self) -> ReActAgent:
         """
-        Constructs a FunctionAgent using the llama-index-core 0.14+ API.
-        Direct constructor -- no .from_tools() classmethod in this version.
+        New API (>= 0.12): ReActAgent instantiated directly, no from_tools().
+        Memory is passed per-run. verbose=False prevents reasoning traces
+        from leaking into the streamed output.
         """
-        return FunctionAgent(
+        return ReActAgent(
             tools=self._tools,
             llm=self.llm,
             system_prompt=AGENT_SYSTEM_PROMPT,
+            max_iterations=10,
             verbose=False,
         )
 
     def _new_memory(self) -> ChatMemoryBuffer:
-        """Returns a fresh ChatMemoryBuffer for a new conversation session."""
         return ChatMemoryBuffer.from_defaults(
             token_limit=settings.MEMORY_TOKEN_LIMIT,
         )
@@ -177,7 +125,7 @@ class RAGAgent:
     def _assert_ready(self) -> None:
         if not self._ready or self._agent is None:
             raise RuntimeError(
-                "RAGAgent is not initialised. Call `await agent.initialise()` first."
+                "RAGAgent not initialised. Call `await agent.initialise()` first."
             )
 
     # ------------------------------------------------------------------
@@ -186,37 +134,77 @@ class RAGAgent:
 
     async def chat(self, query: str) -> str:
         """
-        Single-turn chat. Returns the full response string.
-        Conversation history is preserved in self._memory across calls.
+        Non-streaming chat.
+        WorkflowHandler is awaitable — resolves to the final AgentOutput.
+        Strips ReAct reasoning traces from the result before returning.
         """
         self._assert_ready()
-        handler = self._agent.run(user_msg=query, memory=self._memory)
+        handler = self._agent.run(
+            user_msg=query,
+            memory=self._memory,
+        )
         result = await handler
-        return str(result)
+        return _extract_answer(str(result))
 
     async def stream_chat(self, query: str) -> AsyncGenerator[str, None]:
-        """
-        Streaming chat via WorkflowHandler.stream_events().
-        Yields individual token deltas as they arrive from Groq.
-        Conversation history is preserved in self._memory across calls.
-        """
         self._assert_ready()
-        handler = self._agent.run(user_msg=query, memory=self._memory)
-        emitted_delta = False
+
+        # Strategy: try live streaming first (AgentStream events).
+        # If the stream yields nothing (tool-call responses, ReAct traces with
+        # no Answer: token), fall back to a blocking chat() call and yield the
+        # result as a single chunk so the frontend always gets something.
+
+        handler = self._agent.run(
+            user_msg=query,
+            memory=self._memory,
+        )
+
+        accumulated    = ""
+        answer_started = False
+        any_yielded    = False
+
         async for event in handler.stream_events():
-            if isinstance(event, AgentStream):
-                if event.delta:
-                    emitted_delta = True
-                    yield event.delta
-        if not emitted_delta:
-            result = await handler
-            text = str(result)
-            if text:
-                yield text
+            if not isinstance(event, AgentStream):
+                continue
+
+            delta = event.delta
+            if not delta:
+                continue
+
+            if answer_started:
+                yield delta
+                any_yielded = True
+            else:
+                accumulated += delta
+                idx = accumulated.find(_ANSWER_PREFIX)
+                if idx != -1:
+                    answer_started = True
+                    after = accumulated[idx + len(_ANSWER_PREFIX):].lstrip(" ")
+                    if after:
+                        yield after
+                        any_yielded = True
+
+        # Finalize so memory is committed regardless
+        try:
+            final = await handler
+            final_text = _extract_answer(str(final))
+
+            # If streaming yielded nothing, send the full answer as one chunk
+            if not any_yielded and final_text:
+                yield final_text
+
+        except Exception:
+            # Last resort: blocking chat
+            if not any_yielded:
+                try:
+                    fallback = await self.chat(query)
+                    if fallback:
+                        yield fallback
+                except Exception:
+                    pass
 
     def reset_memory(self) -> None:
-        """Clears conversation history for a fresh session."""
-        self._assert_ready()
+        """Replaces the memory buffer with a fresh one, clearing history."""
         self._memory = self._new_memory()
 
     # ------------------------------------------------------------------
@@ -226,54 +214,32 @@ class RAGAgent:
     async def ingest_documents(
         self,
         directory: str,
-        chunk_size: int    = 1000,
+        chunk_size:    int = 1000,
         chunk_overlap: int = 200,
     ) -> int:
-        """
-        Loads, chunks, and upserts documents from a directory into Pinecone.
-        chunk_size / chunk_overlap are forwarded to SentenceSplitter.
-        """
         self._assert_ready()
-        print(f"[Agent] Ingesting documents from '{directory}' ...")
+        print(f"[Agent] Ingesting from '{directory}' ...")
 
         docs = await aload_documents_from_directory(directory)
         if not docs:
-            print("[Agent] No supported files found -- nothing upserted.")
+            print("[Agent] No supported files found.")
             return 0
 
-        from llama_index.core.node_parser import SentenceSplitter
-        from llama_index.core.ingestion import IngestionPipeline
-
-        splitter = SentenceSplitter(
+        nodes = await arun_pipeline(
+            docs,
+            use_metadata_extractors=False,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            paragraph_separator="\n\n",
         )
-        pipeline = IngestionPipeline(transformations=[splitter])
-
-        loop = asyncio.get_running_loop()
-        try:
-            nodes = await pipeline.arun(documents=docs)
-        except AttributeError:
-            nodes = await loop.run_in_executor(None, pipeline.run, docs)
 
         count = await aupsert_nodes(self.vector_index, nodes)
-        print(f"[Agent] Ingestion complete -- {count} nodes added to Pinecone.")
+        print(f"[Agent] Ingestion complete — {count} nodes in Pinecone.")
         return count
 
-    async def ingest_csv(
-        self,
-        csv_path: str,
-        table_name: Optional[str] = None,
-    ) -> str:
-        """
-        Loads a CSV into SQLite and rebuilds the agent so the new table
-        is immediately queryable.
-        """
+    async def ingest_csv(self, csv_path: str, table_name: Optional[str] = None) -> str:
         self._assert_ready()
         name = await self.sql_manager.aload_csv(csv_path, table_name=table_name)
 
-        # Swap in a fresh SQL tool that knows about the new table
         new_sql_tool = self.sql_manager.get_tool()
         self._tools = [
             t for t in self._tools
@@ -281,23 +247,34 @@ class RAGAgent:
         ]
         self._tools.append(new_sql_tool)
 
-        # Rebuild agent with updated tool list (memory preserved)
+        # Rebuild agent with updated tools; memory lives on self._memory
         self._agent = self._build_agent()
 
-        print(f"[Agent] CSV ingested -- table '{name}' is now queryable.")
+        print(f"[Agent] CSV ingested — table '{name}' queryable.")
         return name
 
 
 # ---------------------------------------------------------------------------
-# Module-level singleton  (imported by app.py)
+# Helper: strip ReAct trace from full response string
+# ---------------------------------------------------------------------------
+
+def _extract_answer(full_response: str) -> str:
+    """
+    Returns only the text after the last 'Answer:' marker.
+    Falls back to the full string if the marker is absent.
+    """
+    idx = full_response.rfind(_ANSWER_PREFIX)
+    if idx != -1:
+        return full_response[idx + len(_ANSWER_PREFIX):].strip()
+    return full_response.strip()
+
+
+# ---------------------------------------------------------------------------
+# Module-level singleton
 # ---------------------------------------------------------------------------
 
 agent = RAGAgent()
 
-
-# ---------------------------------------------------------------------------
-# Standalone smoke-test
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     async def _smoke_test():

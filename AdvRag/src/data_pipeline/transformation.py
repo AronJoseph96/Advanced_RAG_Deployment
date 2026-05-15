@@ -77,7 +77,7 @@ from config import settings   # single import — correct package path
 # ---------------------------------------------------------------------------
 
 # Number of parallel LLM workers inside MetadataExtractors.
-# Keep at 1 on an i3 / free Groq tier to avoid hitting TPD rate limits.
+# Keep low (e.g. 1-3) on an i3 / free Groq tier to avoid hitting TPD rate limits.
 _METADATA_WORKERS: int = int(os.getenv("METADATA_WORKERS", "1"))
 
 _CACHE_DIR: str = settings.CACHE_DIR
@@ -209,11 +209,14 @@ def _table_docs_to_nodes(table_docs: List[Document]) -> List[TextNode]:
 # Individual pipeline components
 # ---------------------------------------------------------------------------
 
-def _make_splitter() -> SentenceSplitter:
+def _make_splitter(
+    chunk_size: int = settings.CHUNK_SIZE,
+    chunk_overlap: int = settings.CHUNK_OVERLAP,
+) -> SentenceSplitter:
 
     return SentenceSplitter(
-        chunk_size=settings.CHUNK_SIZE,
-        chunk_overlap=settings.CHUNK_OVERLAP,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
         paragraph_separator="\n\n",
     )
 
@@ -281,6 +284,8 @@ def build_ingestion_pipeline(
     llm,
     use_metadata_extractors: bool = True,
     cache_dir: str = _CACHE_DIR,
+    chunk_size: int = settings.CHUNK_SIZE,
+    chunk_overlap: int = settings.CHUNK_OVERLAP,
 ) -> IngestionPipeline:
     """
     Assembles the IngestionPipeline for PROSE documents only.
@@ -303,7 +308,7 @@ def build_ingestion_pipeline(
     """
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
-    transformations: list = [_make_splitter()]
+    transformations: list = [_make_splitter(chunk_size, chunk_overlap)]
 
     if use_metadata_extractors:
         # Order matters: Title → Summary → Keywords → Questions.
@@ -314,6 +319,10 @@ def build_ingestion_pipeline(
             _make_keyword_extractor(llm),
             _make_questions_extractor(llm),
         ]
+        
+        # Only add the heaviest extractor if explicitly requested via environment
+        if os.getenv("ENABLE_COMPLEX_METADATA", "false").lower() == "true":
+            transformations.append(_make_questions_extractor(llm))
 
     # Persistent docstore for de-duplication across runs.
     # UPSERTS_AND_DELETE: re-processes updated docs, deletes removed ones,
@@ -327,7 +336,7 @@ def build_ingestion_pipeline(
     return IngestionPipeline(
         transformations=transformations,
         docstore=docstore,
-        docstore_strategy=DocstoreStrategy.UPSERTS_AND_DELETE,
+        docstore_strategy=DocstoreStrategy.DUPLICATES_ONLY,
     )
 
 
@@ -339,6 +348,8 @@ async def arun_pipeline(
     documents: List[Document],
     use_metadata_extractors: bool = True,
     cache_dir: str = _CACHE_DIR,
+    chunk_size: int = settings.CHUNK_SIZE,
+    chunk_overlap: int = settings.CHUNK_OVERLAP,
 ) -> List[BaseNode]:
     """
     Runs the full table-aware IngestionPipeline and returns enriched,
@@ -377,6 +388,8 @@ async def arun_pipeline(
             llm=llm,
             use_metadata_extractors=use_metadata_extractors,
             cache_dir=cache_dir,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
         )
 
         print(
