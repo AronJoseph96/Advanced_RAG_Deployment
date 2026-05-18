@@ -1,87 +1,108 @@
-# ============================================================
-# requirements.txt
-# Agentic Hybrid RAG — Groq + Mixedbread + Pinecone + SQLite
-# Python 3.11+  |  Windows  |  Intel i3 / 12 GB RAM
-# ============================================================
-
-# ── LlamaIndex Core ─────────────────────────────────────────
-# Covers: FunctionCallingAgentWorker, AgentRunner, ChatMemoryBuffer,
-# VectorStoreIndex, StorageContext, Settings, SQLDatabase,
-# NLSQLTableQueryEngine, QueryFusionRetriever, RetrieverQueryEngine,
-# QueryEngineTool, ToolMetadata, SentenceSplitter, IngestionPipeline,
-# SimpleDocumentStore, TitleExtractor, SummaryExtractor,
-# KeywordExtractor, QuestionsAnsweredExtractor, PandasQueryEngine
-llama-index-core>=0.11.0
-
-# ── LLM: Groq ────────────────────────────────────────────────
-# llm.py: from llama_index.llms.groq import Groq
-llama-index-llms-groq>=0.3.0
-
-# ── Embeddings: Mixedbread AI ────────────────────────────────
-# vector_store.py: from llama_index.embeddings.mixedbreadai import MixedbreadAIEmbedding
-llama-index-embeddings-mixedbreadai>=0.2.0
-
-# ── Reranker: Mixedbread AI ───────────────────────────────────
-# vector_store.py: from llama_index.postprocessor.mixedbreadai_rerank import MixedbreadAIRerank
-llama-index-postprocessor-mixedbreadai-rerank>=0.2.0
-
-# ── Vector Store: Pinecone Serverless ────────────────────────
-# vector_store.py: from llama_index.vector_stores.pinecone import PineconeVectorStore
-llama-index-vector-stores-pinecone>=0.3.0
-# vector_store.py: from pinecone import Pinecone, ServerlessSpec
-pinecone>=5.0.0
-
-# ── Document Loaders ─────────────────────────────────────────
-# loader.py: from llama_index.readers.file import (
-#                PyMuPDFReader, DocxReader, MarkdownReader, TextReader)
-llama-index-readers-file>=0.3.0
-# Backend for PyMuPDFReader (imported internally as `fitz`)
-pymupdf>=1.24.0
-# Backend for DocxReader text extraction
-docx2txt>=0.8
-# Used directly in helpers.py for DOCX heading-style extraction
-python-docx>=1.1.0
-
-# ── Structured Data ──────────────────────────────────────────
-# sql_store.py: from sqlalchemy import create_engine
-sqlalchemy>=2.0.0
-# sql_store.py + helpers.py: import pandas as pd
-pandas>=2.2.0
-# helpers.py: pd.read_excel() requires openpyxl for .xlsx files
-openpyxl>=3.1.0
-
-# ── Config ───────────────────────────────────────────────────
-# config.py: from pydantic_settings import BaseSettings, SettingsConfigDict
-pydantic-settings>=2.0.0
-
-# ── FastAPI Stack ─────────────────────────────────────────────
-# app.py: from fastapi import FastAPI, HTTPException, UploadFile, ...
-fastapi>=0.111.0
-# [standard] pulls in uvloop + httptools for better async throughput
-uvicorn[standard]>=0.30.0
-# app.py: UploadFile / File() multipart parsing
-python-multipart>=0.0.9
-
-# ── Utilities ─────────────────────────────────────────────────
-# All files: from dotenv import load_dotenv
-python-dotenv>=1.0.0
-# app.py: aiofiles used by background file cleanup tasks
-aiofiles>=23.0.0
-
-# ── Optional: LlamaParse ─────────────────────────────────────
-# helpers.py: from llama_parse import LlamaParse
-# Only needed when LLAMA_CLOUD_API_KEY is set. The code guards against
-# ImportError at runtime, so this stays commented out by default.
-# llama-parse>=0.4.0
-
-# ─────────────────────────────────────────────────────────────
-# REMOVED vs. previous requirements.txt — reasons:
-#
-# llama-index-llms-google-genai
-# llama-index-embeddings-google-genai
-# google-generativeai
-#   All Google/Gemini packages removed. The codebase now uses Groq for
-#   LLM inference and Mixedbread AI for embeddings and reranking.
-#   Installing unused Google packages adds ~80 MB and creates import
-#   ambiguity if both google-genai and groq clients are initialised.
-# ─────────────────────────────────────────────────────────────
+-e git+https://github.com/AronJoseph96/Advanced_RAG.git@56419ea5618ae5fc247e91bcad6308150d7d7e8a#egg=advrag&subdirectory=advrag
+aiofiles==25.1.0
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.5
+aiosignal==1.4.0
+aiosqlite==0.22.1
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.13.0
+attrs==26.1.0
+banks==2.4.2
+beautifulsoup4==4.14.3
+certifi==2026.4.22
+charset-normalizer==3.4.7
+click==8.3.3
+colorama==0.4.6
+dataclasses-json==0.6.7
+defusedxml==0.7.1
+Deprecated==1.3.1
+dirtyjson==1.0.8
+distro==1.9.0
+docx2txt==0.9
+et_xmlfile==2.0.0
+fastapi==0.136.1
+filelock==3.29.0
+filetype==1.2.0
+frozenlist==1.8.0
+fsspec==2026.4.0
+greenlet==3.5.0
+griffe==2.0.2
+griffecli==2.0.2
+griffelib==2.0.2
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.7.1
+httpx==0.28.1
+huggingface_hub==0.36.2
+idna==3.14
+Jinja2==3.1.6
+jiter==0.14.0
+joblib==1.5.3
+llama-index-core==0.14.21
+llama-index-embeddings-mixedbreadai==0.6.0
+llama-index-instrumentation==0.5.0
+llama-index-llms-groq==0.5.0
+llama-index-llms-openai==0.6.26
+llama-index-llms-openai-like==0.5.3
+llama-index-postprocessor-mixedbreadai-rerank==0.6.0
+llama-index-readers-file==0.6.0
+llama-index-vector-stores-pinecone==0.8.0
+llama-index-workflows==2.20.0
+lxml==6.1.0
+MarkupSafe==3.0.3
+marshmallow==3.26.2
+mixedbread==0.50.0
+multidict==6.7.1
+mypy_extensions==1.1.0
+nest-asyncio==1.6.0
+networkx==3.6.1
+nltk==3.9.4
+numpy==2.4.4
+openai==2.36.0
+openpyxl==3.1.5
+packaging==24.2
+pandas==2.3.3
+pillow==12.2.0
+pinecone==7.3.0
+pinecone-plugin-assistant==1.8.0
+pinecone-plugin-interface==0.0.7
+platformdirs==4.9.6
+propcache==0.5.2
+pydantic==2.13.4
+pydantic-settings==2.14.1
+pydantic_core==2.46.4
+PyMuPDF==1.27.2.3
+pypdf==6.11.0
+python-dateutil==2.9.0.post0
+python-docx==1.2.0
+python-dotenv==1.2.2
+python-multipart==0.0.28
+pytz==2026.2
+PyYAML==6.0.3
+regex==2026.5.9
+requests==2.33.1
+safetensors==0.7.0
+setuptools==82.0.1
+six==1.17.0
+sniffio==1.3.1
+soupsieve==2.8.3
+SQLAlchemy==2.0.49
+starlette==1.0.0
+striprtf==0.0.26
+tenacity==9.1.4
+tiktoken==0.12.0
+tinytag==2.2.1
+tokenizers==0.22.2
+tqdm==4.67.3
+transformers==4.57.6
+typing-inspect==0.9.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+tzdata==2026.2
+urllib3==2.7.0
+uvicorn==0.46.0
+watchfiles==1.1.1
+websockets==16.0
+wrapt==2.1.2
+yarl==1.23.0

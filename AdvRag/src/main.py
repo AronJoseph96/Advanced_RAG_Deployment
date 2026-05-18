@@ -214,8 +214,8 @@ class RAGAgent:
     async def ingest_documents(
         self,
         directory: str,
-        chunk_size:    int = 1000,
-        chunk_overlap: int = 200,
+        chunk_size:    int = settings.CHUNK_SIZE,
+        chunk_overlap: int = settings.CHUNK_OVERLAP,
     ) -> int:
         self._assert_ready()
         print(f"[Agent] Ingesting from '{directory}' ...")
