@@ -1,4 +1,3 @@
--e git+https://github.com/AronJoseph96/Advanced_RAG.git@56419ea5618ae5fc247e91bcad6308150d7d7e8a#egg=advrag&subdirectory=advrag
 aiofiles==25.1.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.5
