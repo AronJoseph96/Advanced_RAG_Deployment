@@ -1,54 +1,7 @@
 """
 data_pipeline/transformation.py
 --------------------------------
-LlamaIndex IngestionPipeline that converts raw Document objects (produced by
-loader.py / helpers.py) into enriched, de-duplicated Nodes ready for Pinecone.
 
-Pipeline stages (in order)
----------------------------
-1. Table-aware split          — documents tagged content_type="table" bypass
-                                SentenceSplitter entirely; they become one
-                                atomic TextNode so no table is ever cut in half.
-2. SentenceSplitter           — respects sentence boundaries for prose nodes.
-3. TitleExtractor             — LLM-inferred title per node.
-4. SummaryExtractor           — 1-sentence LLM summary per node.
-5. KeywordExtractor           — 10 keywords for BM25 / sparse boosting.
-6. QuestionsAnsweredExtractor — 3 questions this chunk answers (improves
-                                retrieval for question-type queries).
-
-Key fix vs previous version
-----------------------------
-Every metadata extractor now receives the Groq LLM instance EXPLICITLY
-at construction time instead of reading Settings.llm at call time.
-LlamaIndex extractors silently fall back to OpenAI() when Settings.llm
-is not set at the exact moment they are instantiated — this caused the
-"Retrying llama_index.llms.openai.base.OpenAI._achat" traceback even
-without an OPENAI_API_KEY.  Passing `llm=llm` directly eliminates that
-fallback path completely.
-
-Table management
-----------------
-loader.py tags every table Document with:
-    metadata["content_type"] = "table"
-    metadata["table_index"]  = <int>
-
-arun_pipeline() separates those out BEFORE the IngestionPipeline runs,
-converts them directly to TextNode objects (no splitting), then merges
-the two sets of nodes back together.
-Result: prose is chunked normally; tables are always whole.
-
-De-duplication
---------------
-The pipeline uses a SimpleDocumentStore cache (stored on disk) so that
-re-running ingestion on the same files skips already-processed nodes.
-Critical on an i3 — avoids re-embedding 1000 nodes when one new file is added.
-
-i3 / rate-limit note
---------------------
-MetadataExtractor runs one LLM call per Node per extractor stage.
-`num_workers` is capped at 1 to avoid parallel Groq calls that burn
-through the free-tier TPD (100 k tokens/day) in seconds.
-Set METADATA_WORKERS=2 in .env only if you are on a paid Groq plan.
 """
 
 import os
@@ -70,8 +23,6 @@ from llama_index.core.ingestion import IngestionPipeline, DocstoreStrategy
 from llama_index.core.storage.docstore import SimpleDocumentStore
 
 from config import settings   # single import — correct package path
-
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -81,8 +32,6 @@ from config import settings   # single import — correct package path
 _METADATA_WORKERS: int = int(os.getenv("METADATA_WORKERS", "1"))
 
 _CACHE_DIR: str = settings.CACHE_DIR
-
-
 # ---------------------------------------------------------------------------
 # LLM guard
 # ---------------------------------------------------------------------------

@@ -263,58 +263,6 @@ async def reset_memory() -> dict:
     agent.reset_memory()
     return {"message": "Conversation memory cleared."}
 
-# ── Flush endpoint (add to app.py) ──────────────────────────────────────────
-# Place this after the existing imports, before or after the /chat/memory route.
-# Also add the import at the top: from storage.vector_store import _get_pinecone_client
-# and: from sqlalchemy import create_engine, inspect, text as sa_text
-
-@app.delete("/flush", tags=["ops"])
-async def flush_all() -> dict:
-    """
-    Nuclear option: deletes ALL vectors from Pinecone and ALL tables from SQLite.
-    Use before ingesting a fresh set of documents to avoid stale data bleed.
-    """
-    results = {}
-
-    # ── 1. Pinecone — delete all vectors in the index ──────────────────────
-    try:
-        from pinecone import Pinecone as _Pinecone
-        pc = _Pinecone(api_key=settings.PINECONE_API_KEY)
-        idx = pc.Index(settings.PINECONE_INDEX_NAME)
-        idx.delete(delete_all=True)
-        results["pinecone"] = "all vectors deleted"
-        print("[Flush] Pinecone index cleared.")
-    except Exception as exc:
-        results["pinecone"] = f"error: {exc}"
-        print(f"[Flush] Pinecone error: {exc}")
-
-    # ── 2. SQLite — drop every user table ──────────────────────────────────
-    try:
-        from sqlalchemy import create_engine, inspect, text as sa_text
-        engine = create_engine(f"sqlite:///{settings.SQLITE_DB_PATH}")
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        with engine.connect() as conn:
-            for tbl in tables:
-                conn.execute(sa_text(f'DROP TABLE IF EXISTS "{tbl}"'))
-            conn.commit()
-        results["sqlite"] = f"dropped tables: {tables}" if tables else "no tables found"
-        print(f"[Flush] SQLite tables dropped: {tables}")
-    except Exception as exc:
-        results["sqlite"] = f"error: {exc}"
-        print(f"[Flush] SQLite error: {exc}")
-
-    # ── 3. Reset agent's SQL manager so stale schema is cleared ────────────
-    try:
-        agent.sql_manager._db = None
-        agent.sql_manager._query_engine = None
-        results["agent_sql"] = "sql manager reset"
-    except Exception as exc:
-        results["agent_sql"] = f"error: {exc}"
-
-    return {"message": "Flush complete. Upload new documents before querying.", "detail": results}
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("advrag.api.app:app", host="0.0.0.0", port=8000, reload=True, workers=1, loop="asyncio")

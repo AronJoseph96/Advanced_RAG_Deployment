@@ -149,59 +149,59 @@ class RAGAgent:
     async def stream_chat(self, query: str) -> AsyncGenerator[str, None]:
         self._assert_ready()
 
-        # Strategy: try live streaming first (AgentStream events).
-        # If the stream yields nothing (tool-call responses, ReAct traces with
-        # no Answer: token), fall back to a blocking chat() call and yield the
-        # result as a single chunk so the frontend always gets something.
-
-        handler = self._agent.run(
-            user_msg=query,
-            memory=self._memory,
-        )
+        # Strategy:
+        #   1. Run the agent and consume AgentStream events, buffering until
+        #      the "Answer:" marker appears, then yield all subsequent tokens.
+        #   2. If nothing was yielded (marker never appeared, or an exception
+        #      was raised mid-stream), fall back to a *fresh* blocking chat()
+        #      call. Never re-await a handler that already started streaming —
+        #      ReActAgent raises on a second await once tool calls have begun.
 
         accumulated    = ""
         answer_started = False
         any_yielded    = False
+        stream_exc: Optional[Exception] = None
 
-        async for event in handler.stream_events():
-            if not isinstance(event, AgentStream):
-                continue
-
-            delta = event.delta
-            if not delta:
-                continue
-
-            if answer_started:
-                yield delta
-                any_yielded = True
-            else:
-                accumulated += delta
-                idx = accumulated.find(_ANSWER_PREFIX)
-                if idx != -1:
-                    answer_started = True
-                    after = accumulated[idx + len(_ANSWER_PREFIX):].lstrip(" ")
-                    if after:
-                        yield after
-                        any_yielded = True
-
-        # Finalize so memory is committed regardless
         try:
-            final = await handler
-            final_text = _extract_answer(str(final))
+            handler = self._agent.run(
+                user_msg=query,
+                memory=self._memory,
+            )
 
-            # If streaming yielded nothing, send the full answer as one chunk
-            if not any_yielded and final_text:
-                yield final_text
+            async for event in handler.stream_events():
+                if not isinstance(event, AgentStream):
+                    continue
 
-        except Exception:
-            # Last resort: blocking chat
-            if not any_yielded:
-                try:
-                    fallback = await self.chat(query)
-                    if fallback:
-                        yield fallback
-                except Exception:
-                    pass
+                delta = event.delta
+                if not delta:
+                    continue
+
+                if answer_started:
+                    yield delta
+                    any_yielded = True
+                else:
+                    accumulated += delta
+                    idx = accumulated.find(_ANSWER_PREFIX)
+                    if idx != -1:
+                        answer_started = True
+                        after = accumulated[idx + len(_ANSWER_PREFIX):].lstrip(" ")
+                        if after:
+                            yield after
+                            any_yielded = True
+
+        except Exception as exc:
+            stream_exc = exc
+            print(f"[Agent] stream_chat streaming error: {exc}")
+
+        # ── Fallback: if nothing was yielded, run a fresh blocking chat() ──
+        if not any_yielded:
+            try:
+                fallback = await self.chat(query)
+                if fallback:
+                    yield fallback
+            except Exception as fb_exc:
+                original = str(stream_exc) if stream_exc else str(fb_exc)
+                yield f"[Error] {original}"
 
     def reset_memory(self) -> None:
         """Replaces the memory buffer with a fresh one, clearing history."""
