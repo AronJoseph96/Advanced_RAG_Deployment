@@ -103,7 +103,10 @@ class SQLStoreManager:
 
     def _init_db(self) -> None:
         """Initialises SQLAlchemy engine and LlamaIndex SQLDatabase wrapper."""
-        engine   = create_engine(f"sqlite:///{self.db_path}")
+        db_path = Path(self.db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        engine   = create_engine(f"sqlite:///{db_path}")
         self._db = SQLDatabase(engine)
 
     def _get_query_engine(self) -> NLSQLTableQueryEngine:
