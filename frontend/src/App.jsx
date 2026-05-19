@@ -348,7 +348,7 @@ function RightPanel({ agentReady, history, needsUpload, onUploadSuccess }) {
             <span className="mso fill" style={{ fontSize: 16, color: needsUpload ? "var(--warn)" : "var(--success)" }}>{needsUpload ? "warning" : "database"}</span>
             <div>
               <div style={{ fontSize: 12, fontWeight: 600, color: needsUpload ? "var(--warn)" : "var(--primary)" }}>{needsUpload ? "Empty — upload needed" : agentReady ? "Agent Connected" : "Agent Offline"}</div>
-              <div style={{ fontSize: 11, color: "var(--outline)" }}>{needsUpload ? "No documents indexed" : agentReady ? "Ready to query" : "Start uvicorn on :8000"}</div>
+              <div style={{ fontSize: 11, color: "var(--outline)" }}>{needsUpload ? "No documents indexed" : agentReady ? "Ready to query" : "Waking up… (30–60s on free tier)"}</div>
             </div>
           </div>
         </div>
@@ -641,7 +641,7 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
           <div style={{ display: "flex", alignItems: "center", padding: "6px 12px" }}>
             <textarea ref={textRef} value={input} onChange={handleInput} onKeyDown={handleKey}
               disabled={busy || !agentReady}
-              placeholder={agentReady ? "What do you want to know?" : "Waiting for agent…"}
+              placeholder={agentReady ? "What do you want to know?" : "Backend waking up on Render, please wait…"}
               rows={1}
               style={{ flex: 1, background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 14, color: "var(--primary)", lineHeight: 1.6, minHeight: 24, maxHeight: 160, overflowY: "auto", caretColor: "var(--primary)" }}
             />
@@ -709,7 +709,7 @@ export default function App() {
       catch { setAgentReady(false); }
     };
     poll();
-    const id = setInterval(poll, 8000);
+    const id = setInterval(poll, 30000);
     return () => clearInterval(id);
   }, []);
 
