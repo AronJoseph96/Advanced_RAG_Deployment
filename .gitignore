@@ -34,6 +34,8 @@ htmlcov/
 # LlamaIndex / RAG storage
 storage/
 *.db
+!AdvRag/src/storage/
+!AdvRag/src/storage/*.py
 
 # Data directories (add back selectively if you want sample data tracked)
 data/docs/
