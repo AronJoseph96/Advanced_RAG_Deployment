@@ -165,21 +165,16 @@ const styles = `
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes popIn { from { opacity: 0; transform: scale(0.96) translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes flushOverlayIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes flushRipple { 0% { transform: scale(0.3); opacity: 0.8; } 100% { transform: scale(4); opacity: 0; } }
-  @keyframes flushParticleDrop {
-    0%   { opacity: 1; transform: translateY(0) scale(1); }
-    60%  { opacity: 0.7; }
-    100% { opacity: 0; transform: translateY(80px) scale(0.3); }
-  }
-  @keyframes flushSpinReverse { to { transform: rotate(-360deg); } }
-  @keyframes flushTextPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes flushScan { 0% { top: 0%; opacity: 0.7; } 100% { top: 100%; opacity: 0; } }
+  @keyframes flushBarFill { 0% { width: 0%; } 85% { width: 90%; } 100% { width: 95%; } }
+  @keyframes flushRowSlide { 0% { opacity: 0; transform: translateX(-8px); } 100% { opacity: 1; transform: none; } }
+  @keyframes flushBlink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
   @keyframes flushSuccessScale { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
   @keyframes nudge { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-5deg)} 75%{transform:rotate(5deg)} }
 `;
 
 // ─── Flush Overlay ────────────────────────────────────────────────────────────
 function FlushOverlay({ phase, onConfirm, onCancel }) {
-  const pc = 16;
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 200,
@@ -207,24 +202,52 @@ function FlushOverlay({ phase, onConfirm, onCancel }) {
       )}
 
       {phase === "flushing" && (
-        <div style={{ position: "relative", width: 260, height: 260, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 80, height: 80, borderRadius: "50%", border: "1.5px solid rgba(248,113,113,0.4)", animation: `flushRipple 1.8s ease-out infinite ${i * 0.6}s`, pointerEvents: "none" }} />
-          ))}
-          {Array.from({ length: pc }).map((_, i) => {
-            const angle = (i / pc) * 360;
-            const r = 50 + (i % 3) * 18;
-            const x = Math.cos((angle * Math.PI) / 180) * r;
-            return (
-              <div key={i} style={{ position: "absolute", top: "50%", left: "50%", width: 4 + (i % 3) * 2, height: 4 + (i % 3) * 2, borderRadius: "50%", background: `hsl(${i * 12}, 80%, 65%)`, transform: `translate(calc(-50% + ${x}px), -50%)`, animation: `flushParticleDrop 1.4s ease-in infinite ${(i / pc) * 0.8}s`, pointerEvents: "none" }} />
-            );
-          })}
-          <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(248,113,113,0.1)", border: "1.5px solid rgba(248,113,113,0.3)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
-              <span className="mso fill" style={{ fontSize: 32, color: "var(--error)", animation: "flushSpinReverse 1s linear infinite", display: "inline-block" }}>refresh</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 32, animation: "popIn 0.2s ease" }}>
+          {/* Terminal-style delete card */}
+          <div style={{
+            width: 380, background: "#0d0d0f", border: "1px solid rgba(248,113,113,0.25)",
+            borderRadius: 16, overflow: "hidden",
+            boxShadow: "0 0 0 1px rgba(248,113,113,0.08), 0 32px 80px rgba(0,0,0,0.7)",
+          }}>
+            {/* Title bar */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(248,113,113,0.7)" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(251,191,36,0.4)" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "rgba(52,211,153,0.3)" }} />
+              <span style={{ marginLeft: 8, fontSize: 11, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", letterSpacing: "0.05em" }}>flush.sh</span>
             </div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: "#fff", marginBottom: 6, animation: "flushTextPulse 1.2s ease-in-out infinite" }}>Flushing knowledge base…</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Deleting vectors · dropping tables</div>
+
+            {/* Log lines */}
+            <div style={{ padding: "16px 20px", fontFamily: "monospace", fontSize: 12, lineHeight: 2, position: "relative", overflow: "hidden" }}>
+              {/* Scan line */}
+              <div style={{ position: "absolute", left: 0, right: 0, height: 28, background: "linear-gradient(transparent, rgba(248,113,113,0.04), transparent)", pointerEvents: "none", animation: "flushScan 1.6s ease-in-out infinite" }} />
+
+              {[
+                { prefix: "$", text: "connecting to pinecone…",       color: "rgba(255,255,255,0.5)", delay: "0s" },
+                { prefix: "✓", text: "index found · deleting vectors", color: "rgba(248,113,113,0.8)", delay: "0.15s" },
+                { prefix: "✓", text: "sparse vectors cleared",         color: "rgba(248,113,113,0.8)", delay: "0.3s" },
+                { prefix: "$", text: "connecting to sqlite…",          color: "rgba(255,255,255,0.5)", delay: "0.45s" },
+                { prefix: "✓", text: "dropping tables",                color: "rgba(248,113,113,0.8)", delay: "0.6s" },
+                { prefix: "✓", text: "cache cleared",                  color: "rgba(248,113,113,0.8)", delay: "0.75s" },
+                { prefix: "…", text: "finalising",                     color: "rgba(255,255,255,0.3)", delay: "0.9s", blink: true },
+              ].map((row, i) => (
+                <div key={i} style={{ display: "flex", gap: 12, animation: `flushRowSlide 0.3s ease both`, animationDelay: row.delay }}>
+                  <span style={{ color: row.color, minWidth: 14, animation: row.blink ? "flushBlink 1s infinite" : "none" }}>{row.prefix}</span>
+                  <span style={{ color: row.blink ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.75)" }}>{row.text}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Progress bar */}
+            <div style={{ padding: "0 20px 18px" }}>
+              <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
+                <div style={{ height: "100%", background: "linear-gradient(90deg, rgba(248,113,113,0.9), rgba(248,113,113,0.4))", borderRadius: 99, animation: "flushBarFill 3s cubic-bezier(0.4,0,0.2,1) forwards" }} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", letterSpacing: "0.04em" }}>
+            Do not close this tab
           </div>
         </div>
       )}
