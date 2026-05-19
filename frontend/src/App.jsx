@@ -130,7 +130,6 @@ const styles = `
     --error: #f87171;
     --sans: 'Plus Jakarta Sans', system-ui, sans-serif;
     --sidebar-w: 64px;
-    --right-w: 320px;
   }
   html, body, #root { height: 100%; background: var(--bg); font-family: var(--sans); color: var(--on-surface); font-size: 14px; line-height: 1.6; overflow: hidden; }
   button { font-family: var(--sans); cursor: pointer; border: none; background: none; }
@@ -305,193 +304,86 @@ function LeftSidebar({ onNewChat, onFlush, agentReady }) {
   );
 }
 
-// ─── Right Intelligence Panel ─────────────────────────────────────────────────
-function RightPanel({ agentReady, history, needsUpload, onUploadSuccess }) {
-  const [files, setFiles] = useState([]);
-  const [uploadStatus, setUploadStatus] = useState(null);
-  const [uploadMsg, setUploadMsg] = useState("");
-  const [showUpload, setShowUpload] = useState(false);
-  const fileInputRef = useRef();
+// ─── Attach Dropup Menu ───────────────────────────────────────────────────────
+function AttachDropup({ onClose, onIngest, uploadToastRef }) {
+  const docsRef = useRef();
+  const csvRef = useRef();
 
-  const handleUpload = async () => {
-    if (!files.length) return;
-    setUploadStatus("uploading"); setUploadMsg("");
-    const csvFiles = files.filter(f => f.name.toLowerCase().endsWith(".csv"));
-    const docFiles = files.filter(f => !f.name.toLowerCase().endsWith(".csv"));
-    try {
-      let results = [];
-      if (docFiles.length) { const res = await uploadDocuments(docFiles); results.push(`${res.count || 0} nodes ingested`); }
-      for (const csv of csvFiles) { const res = await uploadCSV(csv); results.push(res.message || "CSV loaded"); }
-      setUploadStatus("done"); setUploadMsg(results.join(" · ")); setFiles([]);
-      if (onUploadSuccess) onUploadSuccess();
-    } catch (e) { setUploadStatus("error"); setUploadMsg(e.message); }
+  const handleFiles = async (files) => {
+    onClose();
+    await onIngest(Array.from(files));
   };
 
   return (
-    <aside style={{ position: "fixed", right: 0, top: 0, height: "100%", width: "var(--right-w)", background: "#0e0e10", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", padding: "24px 20px", zIndex: 40, overflowY: "auto" }}>
-      <h2 style={{ fontSize: 24, fontWeight: 600, color: "var(--primary)", marginBottom: 28, marginTop: 56 }}>Intelligence</h2>
-
-      {/* Knowledge Base Status */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: "var(--outline)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Knowledge Base</span>
-          <button onClick={() => setShowUpload(v => !v)} style={{ padding: "3px 10px", borderRadius: 6, border: "1px solid var(--border-strong)", color: "var(--on-surface-var)", fontSize: 11, transition: "all 0.15s", background: showUpload ? "var(--primary-faint)" : "none" }}
-            onMouseEnter={e => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "var(--on-surface-var)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}>
-            {showUpload ? "Close" : "Upload"}
-          </button>
-        </div>
-
-        {/* Status card */}
-        <div className="glass" style={{ borderRadius: 12, padding: "12px 14px", borderLeft: needsUpload ? "2px solid var(--warn)" : "2px solid rgba(52,211,153,0.4)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="mso fill" style={{ fontSize: 16, color: needsUpload ? "var(--warn)" : "var(--success)" }}>{needsUpload ? "warning" : "database"}</span>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: needsUpload ? "var(--warn)" : "var(--primary)" }}>{needsUpload ? "Empty — upload needed" : agentReady ? "Agent Connected" : "Agent Offline"}</div>
-              <div style={{ fontSize: 11, color: "var(--outline)" }}>{needsUpload ? "No documents indexed" : agentReady ? "Ready to query" : "Waking up… (30–60s on free tier)"}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Upload panel */}
-        {showUpload && (
-          <div style={{ marginTop: 10, animation: "fadeUp 0.15s ease" }}>
-            <button onClick={() => fileInputRef.current.click()} style={{ width: "100%", border: "1.5px dashed var(--border-strong)", borderRadius: 10, padding: "14px 12px", fontSize: 12, color: "var(--on-surface-var)", background: "var(--surface2)", textAlign: "center", marginBottom: 8, transition: "all 0.15s" }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"; e.currentTarget.style.color = "var(--primary)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border-strong)"; e.currentTarget.style.color = "var(--on-surface-var)"; }}>
-              <span className="mso" style={{ fontSize: 20, display: "block", marginBottom: 4 }}>upload_file</span>
-              {files.length ? `${files.length} file${files.length > 1 ? "s" : ""} selected` : "Click to browse"}
-            </button>
-            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.md,.txt,.csv" multiple style={{ display: "none" }}
-              onChange={e => { setFiles(Array.from(e.target.files)); setUploadStatus(null); setUploadMsg(""); }} />
-
-            {files.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                {files.map((f, i) => {
-                  const ext = f.name.split(".").pop().toUpperCase();
-                  const fmt = SUPPORTED_FORMATS.find(s => s.ext === ext);
-                  return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 6px", fontSize: 11 }}>
-                      <span style={{ color: fmt?.color || "var(--outline)", fontWeight: 700, fontSize: 9 }}>{ext}</span>
-                      <span style={{ color: "var(--on-surface-var)", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name.replace(/\.[^.]+$/, "")}</span>
-                      <button onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))} style={{ color: "var(--outline)", fontSize: 13, lineHeight: 1 }}>×</button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {files.length > 0 && uploadStatus !== "uploading" && (
-              <button onClick={handleUpload} style={{ width: "100%", background: "var(--primary)", color: "#000", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 600 }}>
-                Upload {files.length > 1 ? `(${files.length} files)` : ""}
-              </button>
-            )}
-            {uploadStatus === "uploading" && (
-              <div style={{ textAlign: "center", fontSize: 12, color: "var(--on-surface-var)" }}>
-                <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>◌</span> Processing…
-              </div>
-            )}
-            {uploadMsg && (
-              <div style={{ marginTop: 6, fontSize: 11, padding: "6px 8px", borderLeft: `2px solid ${uploadStatus === "error" ? "var(--error)" : "var(--success)"}`, background: uploadStatus === "error" ? "rgba(248,113,113,0.06)" : "rgba(52,211,153,0.06)", color: uploadStatus === "error" ? "var(--error)" : "var(--success)", borderRadius: "0 4px 4px 0" }}>{uploadMsg}</div>
-            )}
-
-            {/* Supported formats */}
-            <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {SUPPORTED_FORMATS.map(f => (
-                <span key={f.ext} style={{ fontSize: 10, fontWeight: 700, color: f.color, padding: "2px 6px", border: `1px solid ${f.color}33`, borderRadius: 4 }}>{f.ext}</span>
-              ))}
-            </div>
-          </div>
-        )}
+    <div style={{
+      position: "absolute", bottom: "calc(100% + 10px)", left: 0,
+      background: "var(--surface2)", border: "1px solid var(--border-strong)",
+      borderRadius: 14, padding: "6px 0", width: 230, zIndex: 60,
+      boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+      animation: "fadeUp 0.15s ease",
+    }}>
+      <div style={{ padding: "6px 16px 8px", fontSize: 10, letterSpacing: "0.1em", color: "var(--outline)", borderBottom: "1px solid var(--border)", marginBottom: 4, fontWeight: 700 }}>
+        ATTACH FILES
       </div>
 
-      {/* Divider */}
-      <div style={{ height: 1, background: "var(--border)", marginBottom: 24 }} />
-
-      {/* Recent Sessions */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: "var(--outline)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Recent Sessions</span>
-          <span className="mso" style={{ fontSize: 16, color: "var(--outline)" }}>edit_note</span>
+      {/* Documents option */}
+      <button onClick={() => docsRef.current.click()} style={{
+        width: "100%", background: "none", border: "none", display: "flex",
+        alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer",
+        transition: "background 0.12s", textAlign: "left",
+      }}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+        onMouseLeave={e => e.currentTarget.style.background = "none"}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.06)", border: "1px solid var(--border-strong)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <span className="mso" style={{ fontSize: 16, color: "var(--primary)" }}>description</span>
         </div>
-        {history.length === 0 ? (
-          <div style={{ fontSize: 12, color: "var(--outline)", padding: "8px 0" }}>No sessions yet</div>
-        ) : (
-          <ul style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {history.slice(0, 6).map(h => (
-              <li key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", transition: "background 0.12s" }}
-                onMouseEnter={e => e.currentTarget.style.background = "var(--primary-hover)"}
-                onMouseLeave={e => e.currentTarget.style.background = "none"}>
-                <span className="mso" style={{ fontSize: 16, color: "var(--outline)" }}>description</span>
-                <div style={{ overflow: "hidden" }}>
-                  <div style={{ fontSize: 12, color: "var(--on-surface)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{h.title}</div>
-                  <div style={{ fontSize: 10, color: "var(--outline)" }}>{new Date(h.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Spacer */}
-      <div style={{ flex: 1 }} />
-
-      {/* Bottom status card */}
-      <div style={{ padding: "14px 16px", borderRadius: 16, background: "linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 100%)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>Aeython Pro</div>
-          <div style={{ fontSize: 11, color: "var(--outline)" }}>Hybrid RAG · Node Access</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>Documents</div>
+          <div style={{ fontSize: 11, color: "var(--outline)" }}>PDF, DOCX, MD, TXT</div>
         </div>
-        <span className="mso fill" style={{ fontSize: 22, color: "var(--primary)" }}>verified</span>
-      </div>
-    </aside>
-  );
-}
+      </button>
+      <input ref={docsRef} type="file" accept=".pdf,.docx,.md,.txt" multiple style={{ display: "none" }}
+        onChange={e => handleFiles(e.target.files)} />
 
-// ─── Thinking Dots ────────────────────────────────────────────────────────────
-function ThinkingDots() {
-  return (
-    <div style={{ display: "flex", gap: 5, alignItems: "center", padding: "8px 0" }}>
-      {[0, 1, 2].map(i => (
-        <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--primary-dim)", display: "inline-block", animation: `bounce 1.2s infinite ${i * 0.2}s` }} />
-      ))}
+      {/* CSV option */}
+      <button onClick={() => csvRef.current.click()} style={{
+        width: "100%", background: "none", border: "none", display: "flex",
+        alignItems: "center", gap: 12, padding: "10px 16px", cursor: "pointer",
+        transition: "background 0.12s", textAlign: "left",
+      }}
+        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+        onMouseLeave={e => e.currentTarget.style.background = "none"}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <span className="mso" style={{ fontSize: 16, color: "var(--success)" }}>table_chart</span>
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>Structured CSV</div>
+          <div style={{ fontSize: 11, color: "var(--outline)" }}>CSV → SQL analytics</div>
+        </div>
+      </button>
+      <input ref={csvRef} type="file" accept=".csv" style={{ display: "none" }}
+        onChange={e => handleFiles(e.target.files)} />
     </div>
   );
 }
 
-// ─── Message Bubble ───────────────────────────────────────────────────────────
-function MessageBubble({ msg }) {
-  const isUser = msg.role === "user";
-  const isError = msg.role === "error";
-  const isThinking = msg.role === "thinking";
-
+// ─── Upload Toast ─────────────────────────────────────────────────────────────
+function UploadToast({ toast }) {
+  if (!toast) return null;
+  const isError = toast.type === "error";
   return (
-    <div style={{ display: "flex", gap: 14, padding: "14px 0", animation: "fadeUp 0.2s ease", alignItems: "flex-start" }}>
-      {/* Avatar */}
-      <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: isUser ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.08)", border: "1px solid var(--border-strong)", marginTop: 2 }}>
-        <span className="mso" style={{ fontSize: 16, color: isUser ? "var(--on-surface-var)" : "var(--primary)" }}>{isUser ? "person" : "auto_awesome"}</span>
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: isUser ? "var(--on-surface-var)" : "var(--primary)" }}>{isUser ? "You" : "Aeython"}</span>
-          {msg.ts && <span style={{ fontSize: 11, color: "var(--outline)" }}>{msg.ts}</span>}
-          {isError && <span style={{ fontSize: 10, background: "rgba(248,113,113,0.1)", color: "var(--error)", padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>ERROR</span>}
-        </div>
-
-        {isThinking ? <ThinkingDots /> : (
-          isUser ? (
-            <div className="glass" style={{ borderRadius: "4px 14px 14px 14px", padding: "10px 14px", fontSize: 14, color: "var(--on-surface)", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", display: "inline-block", maxWidth: "80%" }}>
-              {msg.content}
-            </div>
-          ) : (
-            <div style={{ fontSize: 14, color: isError ? "var(--error)" : "var(--on-surface)", lineHeight: 1.8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-              {msg.content}
-              {msg.streaming && <span style={{ display: "inline-block", width: 2, height: 14, background: "var(--primary)", marginLeft: 3, verticalAlign: "middle", animation: "blink 0.8s infinite" }} />}
-            </div>
-          )
-        )}
-      </div>
+    <div style={{
+      position: "fixed", bottom: 120, left: "50%", transform: "translateX(-50%)",
+      background: isError ? "rgba(248,113,113,0.12)" : "rgba(52,211,153,0.12)",
+      border: `1px solid ${isError ? "rgba(248,113,113,0.4)" : "rgba(52,211,153,0.4)"}`,
+      color: isError ? "var(--error)" : "var(--success)",
+      borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 500,
+      zIndex: 100, animation: "fadeUp 0.2s ease",
+      display: "flex", alignItems: "center", gap: 8,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+    }}>
+      <span className="mso fill" style={{ fontSize: 16 }}>{isError ? "error" : "check_circle"}</span>
+      {toast.msg}
     </div>
   );
 }
@@ -501,11 +393,43 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("stream");
   const [busy, setBusy] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [uploadToast, setUploadToast] = useState(null);
   const bottomRef = useRef(null);
   const textRef = useRef(null);
   const cancelRef = useRef(null);
+  const attachRef = useRef(null);
+  const mainRef = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Close dropup on outside click
+  useEffect(() => {
+    if (!showAttach) return;
+    const handler = (e) => { if (!attachRef.current?.contains(e.target)) setShowAttach(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showAttach]);
+
+  const showToast = (msg, type = "success") => {
+    setUploadToast({ msg, type });
+    setTimeout(() => setUploadToast(null), 3500);
+  };
+
+  const ingestFiles = async (files) => {
+    const csvFiles = files.filter(f => f.name.toLowerCase().endsWith(".csv"));
+    const docFiles = files.filter(f => !f.name.toLowerCase().endsWith(".csv"));
+    showToast("Uploading & indexing…", "info");
+    try {
+      let results = [];
+      if (docFiles.length) { const res = await uploadDocuments(docFiles); results.push(`${res.count || 0} nodes ingested`); }
+      for (const csv of csvFiles) { const res = await uploadCSV(csv); results.push(res.message || "CSV loaded"); }
+      showToast(results.join(" · "), "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  };
 
   const send = async () => {
     const q = input.trim();
@@ -555,10 +479,34 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
     setMessages([]); setBusy(false);
   };
 
+  // Drag and drop onto chat area
+  const handleDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  const handleDragLeave = (e) => { if (!mainRef.current?.contains(e.relatedTarget)) setDragging(false); };
+  const handleDrop = async (e) => {
+    e.preventDefault(); setDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length) await ingestFiles(files);
+  };
+
   const isEmpty = messages.length === 0;
 
   return (
-    <main className="atmo" style={{ marginLeft: "var(--sidebar-w)", marginRight: "var(--right-w)", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+    <main ref={mainRef} className="atmo"
+      style={{ marginLeft: "var(--sidebar-w)", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}
+      onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+
+      {/* Drag overlay */}
+      {dragging && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 50, background: "rgba(255,255,255,0.03)", border: "2px dashed rgba(255,255,255,0.2)", borderRadius: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={{ textAlign: "center", color: "var(--primary)" }}>
+            <span className="mso" style={{ fontSize: 48, display: "block", marginBottom: 12, opacity: 0.6 }}>upload_file</span>
+            <div style={{ fontSize: 18, fontWeight: 600 }}>Drop files to upload</div>
+            <div style={{ fontSize: 13, color: "var(--outline)", marginTop: 4 }}>PDF, DOCX, MD, TXT, CSV</div>
+          </div>
+        </div>
+      )}
+
+      <UploadToast toast={uploadToast} />
 
       {/* Top bar */}
       <header style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", height: 64, padding: "0 32px", flexShrink: 0, gap: 16 }}>
@@ -641,7 +589,7 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
           <div style={{ display: "flex", alignItems: "center", padding: "6px 12px" }}>
             <textarea ref={textRef} value={input} onChange={handleInput} onKeyDown={handleKey}
               disabled={busy || !agentReady}
-              placeholder={agentReady ? "What do you want to know?" : "Backend waking up on Render, please wait…"}
+              placeholder={agentReady ? "What do you want to know?" : "Waiting for agent…"}
               rows={1}
               style={{ flex: 1, background: "transparent", border: "none", outline: "none", resize: "none", fontSize: 14, color: "var(--primary)", lineHeight: 1.6, minHeight: 24, maxHeight: 160, overflowY: "auto", caretColor: "var(--primary)" }}
             />
@@ -657,25 +605,21 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
             </div>
             {/* Right: action buttons */}
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <label title="Attach files" style={{ padding: 8, color: "var(--on-surface-var)", borderRadius: 8, transition: "all 0.15s", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                onMouseEnter={e => e.currentTarget.style.color = "var(--primary)"}
-                onMouseLeave={e => e.currentTarget.style.color = "var(--on-surface-var)"}>
-                <span className="mso" style={{ fontSize: 20 }}>attachment</span>
-                <input type="file" accept=".pdf,.docx,.md,.txt,.csv" multiple style={{ display: "none" }}
-                  onChange={async (e) => {
-                    const picked = Array.from(e.target.files);
-                    if (!picked.length) return;
-                    e.target.value = "";
-                    const csvFiles = picked.filter(f => f.name.toLowerCase().endsWith(".csv"));
-                    const docFiles = picked.filter(f => !f.name.toLowerCase().endsWith(".csv"));
-                    try {
-                      let results = [];
-                      if (docFiles.length) { const res = await uploadDocuments(docFiles); results.push(`${res.count || 0} nodes ingested`); }
-                      for (const csv of csvFiles) { const res = await uploadCSV(csv); results.push(res.message || "CSV loaded"); }
-                      alert("✓ " + results.join(" · "));
-                    } catch (err) { alert("Upload failed: " + err.message); }
-                  }} />
-              </label>
+              {/* Attach dropup */}
+              <div ref={attachRef} style={{ position: "relative" }}>
+                <button title="Attach files" onClick={() => setShowAttach(v => !v)}
+                  style={{ padding: 8, color: showAttach ? "var(--primary)" : "var(--on-surface-var)", borderRadius: 8, transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "center", background: showAttach ? "var(--primary-faint)" : "none" }}
+                  onMouseEnter={e => { if (!showAttach) e.currentTarget.style.color = "var(--primary)"; }}
+                  onMouseLeave={e => { if (!showAttach) e.currentTarget.style.color = "var(--on-surface-var)"; }}>
+                  <span className="mso" style={{ fontSize: 20, transition: "transform 0.2s", transform: showAttach ? "rotate(45deg)" : "none" }}>attachment</span>
+                </button>
+                {showAttach && (
+                  <AttachDropup
+                    onClose={() => setShowAttach(false)}
+                    onIngest={ingestFiles}
+                  />
+                )}
+              </div>
               {/* Send button */}
               <button onClick={send} disabled={busy || !agentReady || !input.trim()}
                 style={{ width: 36, height: 36, borderRadius: 10, background: (busy || !input.trim()) ? "rgba(255,255,255,0.06)" : "var(--primary)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: (busy || !input.trim()) ? "var(--outline)" : "#000", transition: "all 0.15s", cursor: busy ? "not-allowed" : "pointer" }}
@@ -701,7 +645,6 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [flushPhase, setFlushPhase] = useState(null);
   const [needsUpload, setNeedsUpload] = useState(false);
-  const [panelKey, setPanelKey] = useState(0); // incremented on flush to remount RightPanel and clear its local state
 
   useEffect(() => {
     const poll = async () => {
@@ -728,7 +671,6 @@ export default function App() {
     catch (e) { console.error("Flush error:", e); }
     setFlushPhase("done");
     setNeedsUpload(true);
-    setPanelKey(k => k + 1); // remounts RightPanel — clears stale uploadMsg/files/status
   };
 
   return (
@@ -736,7 +678,6 @@ export default function App() {
       <style>{styles}</style>
       <LeftSidebar agentReady={agentReady} onNewChat={handleNewChat} onFlush={() => setFlushPhase("confirm")} />
       <ChatArea agentReady={agentReady} messages={messages} setMessages={setMessages} needsUpload={needsUpload} history={history} />
-      <RightPanel key={panelKey} agentReady={agentReady} history={history} needsUpload={needsUpload} onUploadSuccess={() => setNeedsUpload(false)} />
       {flushPhase && <FlushOverlay phase={flushPhase} onConfirm={handleFlushConfirm} onCancel={() => setFlushPhase(null)} />}
     </>
   );
