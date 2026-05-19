@@ -368,22 +368,48 @@ function AttachDropup({ onClose, onIngest, uploadToastRef }) {
 }
 
 // ─── Upload Toast ─────────────────────────────────────────────────────────────
-function UploadToast({ toast }) {
+// ─── Global Toast System ──────────────────────────────────────────────────────
+const TOAST_STYLES = {
+  success: { bg: "rgba(52,211,153,0.12)",  border: "rgba(52,211,153,0.4)",  color: "var(--success)", icon: "check_circle" },
+  error:   { bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.4)", color: "var(--error)",   icon: "error" },
+  info:    { bg: "rgba(255,255,255,0.07)", border: "rgba(255,255,255,0.15)",color: "var(--on-surface-var)", icon: "info" },
+  warn:    { bg: "rgba(251,191,36,0.1)",   border: "rgba(251,191,36,0.35)", color: "var(--warn)",    icon: "warning" },
+};
+
+function Toast({ toast, onDismiss }) {
   if (!toast) return null;
-  const isError = toast.type === "error";
+  const s = TOAST_STYLES[toast.type] || TOAST_STYLES.info;
+
   return (
     <div style={{
       position: "fixed", bottom: 120, left: "50%", transform: "translateX(-50%)",
-      background: isError ? "rgba(248,113,113,0.12)" : "rgba(52,211,153,0.12)",
-      border: `1px solid ${isError ? "rgba(248,113,113,0.4)" : "rgba(52,211,153,0.4)"}`,
-      color: isError ? "var(--error)" : "var(--success)",
-      borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 500,
-      zIndex: 100, animation: "fadeUp 0.2s ease",
-      display: "flex", alignItems: "center", gap: 8,
-      boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+      background: s.bg, border: `1px solid ${s.border}`, color: s.color,
+      borderRadius: 12, padding: toast.type === "confirm" ? "14px 18px" : "10px 18px",
+      fontSize: 13, fontWeight: 500, zIndex: 200,
+      animation: "fadeUp 0.2s ease",
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+      boxShadow: "0 8px 40px rgba(0,0,0,0.5)", minWidth: 260, maxWidth: 380,
+      backdropFilter: "blur(12px)",
     }}>
-      <span className="mso fill" style={{ fontSize: 16 }}>{isError ? "error" : "check_circle"}</span>
-      {toast.msg}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
+        <span className="mso fill" style={{ fontSize: 18, flexShrink: 0 }}>{s.icon}</span>
+        <span style={{ flex: 1 }}>{toast.msg}</span>
+        {toast.type !== "confirm" && (
+          <button onClick={onDismiss} style={{ background: "none", border: "none", color: "inherit", opacity: 0.5, padding: 0, lineHeight: 1, cursor: "pointer", fontSize: 18 }}>
+            <span className="mso" style={{ fontSize: 16 }}>close</span>
+          </button>
+        )}
+      </div>
+      {toast.type === "confirm" && (
+        <div style={{ display: "flex", gap: 8, width: "100%" }}>
+          <button onClick={toast.onCancel} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.15)", background: "none", color: "var(--on-surface-var)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button onClick={toast.onConfirm} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "none", background: s.color, color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            {toast.confirmLabel || "Confirm"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -412,9 +438,11 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [showAttach]);
 
-  const showToast = (msg, type = "success") => {
-    setUploadToast({ msg, type });
-    setTimeout(() => setUploadToast(null), 3500);
+  const dismissToast = () => setUploadToast(null);
+
+  const showToast = (msg, type = "success", extra = {}) => {
+    setUploadToast({ msg, type, ...extra });
+    if (type !== "confirm") setTimeout(() => setUploadToast(null), type === "info" ? 2500 : 3500);
   };
 
   const ingestFiles = async (files) => {
@@ -472,11 +500,18 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
 
   const handleKey = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
   const handleInput = (e) => { setInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; };
-  const handleReset = async () => {
-    if (!window.confirm("Clear conversation memory?")) return;
-    if (cancelRef.current) cancelRef.current();
-    try { await resetMemory(); } catch {}
-    setMessages([]); setBusy(false);
+  const handleReset = () => {
+    showToast("Clear conversation memory?", "confirm", {
+      confirmLabel: "Clear",
+      onCancel: () => setUploadToast(null),
+      onConfirm: async () => {
+        setUploadToast(null);
+        if (cancelRef.current) cancelRef.current();
+        try { await resetMemory(); } catch {}
+        setMessages([]); setBusy(false);
+        showToast("Conversation cleared", "success");
+      },
+    });
   };
 
   // Drag and drop onto chat area
@@ -506,7 +541,7 @@ function ChatArea({ agentReady, messages, setMessages, needsUpload, history }) {
         </div>
       )}
 
-      <UploadToast toast={uploadToast} />
+      <Toast toast={uploadToast} onDismiss={dismissToast} />
 
       {/* Top bar */}
       <header style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", height: 64, padding: "0 32px", flexShrink: 0, gap: 16 }}>
@@ -645,11 +680,35 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [flushPhase, setFlushPhase] = useState(null);
   const [needsUpload, setNeedsUpload] = useState(false);
+  const [appToast, setAppToast] = useState(null);
+  const prevAgentReady = useRef(null);
+
+  const showAppToast = (msg, type = "info", extra = {}) => {
+    setAppToast({ msg, type, ...extra });
+    if (type !== "confirm") setTimeout(() => setAppToast(null), type === "error" ? 4000 : 3000);
+  };
 
   useEffect(() => {
     const poll = async () => {
-      try { const d = await checkHealth(); setAgentReady(!!d.agent_ready); }
-      catch { setAgentReady(false); }
+      try {
+        const d = await checkHealth();
+        const ready = !!d.agent_ready;
+        setAgentReady(ready);
+        // Notify on status change (skip very first poll)
+        if (prevAgentReady.current !== null && prevAgentReady.current !== ready) {
+          showAppToast(
+            ready ? "Agent is online and ready" : "Agent went offline",
+            ready ? "success" : "warn"
+          );
+        }
+        prevAgentReady.current = ready;
+      } catch {
+        setAgentReady(false);
+        if (prevAgentReady.current !== false) {
+          showAppToast("Cannot reach backend", "error");
+        }
+        prevAgentReady.current = false;
+      }
     };
     poll();
     const id = setInterval(poll, 30000);
@@ -657,20 +716,34 @@ export default function App() {
   }, []);
 
   const handleNewChat = async () => {
-    if (messages.length > 0) {
-      const first = messages.find(m => m.role === "user");
-      if (first) setHistory(prev => [{ id: Date.now(), title: first.content.slice(0, 55) + (first.content.length > 55 ? "…" : ""), date: new Date() }, ...prev]);
-    }
-    try { await resetMemory(); } catch {}
-    setMessages([]);
+    if (messages.length === 0) return;
+    showAppToast("Start a new chat?", "confirm", {
+      confirmLabel: "New Chat",
+      onCancel: () => setAppToast(null),
+      onConfirm: async () => {
+        setAppToast(null);
+        const first = messages.find(m => m.role === "user");
+        if (first) setHistory(prev => [{ id: Date.now(), title: first.content.slice(0, 55) + (first.content.length > 55 ? "…" : ""), date: new Date() }, ...prev]);
+        try { await resetMemory(); } catch {}
+        setMessages([]);
+        showAppToast("New chat started", "success");
+      },
+    });
   };
 
   const handleFlushConfirm = async () => {
     setFlushPhase("flushing");
-    try { await flushAll(); try { await resetMemory(); } catch {} setMessages([]); }
-    catch (e) { console.error("Flush error:", e); }
-    setFlushPhase("done");
-    setNeedsUpload(true);
+    try {
+      await flushAll();
+      try { await resetMemory(); } catch {}
+      setMessages([]);
+      setFlushPhase("done");
+      setNeedsUpload(true);
+    } catch (e) {
+      console.error("Flush error:", e);
+      setFlushPhase(null);
+      showAppToast("Flush failed: " + e.message, "error");
+    }
   };
 
   return (
@@ -679,6 +752,7 @@ export default function App() {
       <LeftSidebar agentReady={agentReady} onNewChat={handleNewChat} onFlush={() => setFlushPhase("confirm")} />
       <ChatArea agentReady={agentReady} messages={messages} setMessages={setMessages} needsUpload={needsUpload} history={history} />
       {flushPhase && <FlushOverlay phase={flushPhase} onConfirm={handleFlushConfirm} onCancel={() => setFlushPhase(null)} />}
+      <Toast toast={appToast} onDismiss={() => setAppToast(null)} />
     </>
   );
 }
