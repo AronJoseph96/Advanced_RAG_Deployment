@@ -1,8 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL || (
-  import.meta.env.PROD
-    ? 'https://advanced-rag-deployment.onrender.com'
-    : 'http://localhost:8000'
-);
+const BASE = import.meta.env.VITE_API_URL || 'https://advanced-rag-deployment.onrender.com';
 
 export async function checkHealth() {
   const r = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(4000) });
