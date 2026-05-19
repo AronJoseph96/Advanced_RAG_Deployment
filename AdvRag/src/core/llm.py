@@ -6,14 +6,6 @@ Initialises the Groq LLM (llama-index-llms-groq) and the shared RAG prompt.
 Groq provides OpenAI-compatible inference for open-weight models
 (LLaMA-3, Mixtral, Gemma …) with very low latency — ideal for an i3 host
 that cannot run a local GPU model.
-
-Key changes vs. the Gemini version
-------------------------------------
-1. Package : llama-index-llms-google-genai  →  llama-index-llms-groq
-2. Class   : GoogleGenAI                   →  Groq
-3. Removed : thinking_config / THINKING_BUDGET (Gemini-only feature)
-4. Removed : temperature forced to 1.0     (Gemini thinking requirement)
-5. Config  : all constants sourced from config.settings
 """
 
 import asyncio
