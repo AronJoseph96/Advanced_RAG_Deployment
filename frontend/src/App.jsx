@@ -21,11 +21,16 @@ async function chatFull(query) {
   return r.json();
 }
 function chatStream(query, onToken, onDone, onError) {
-  const url = `${BASE}/chat/stream`;
+  const url = `${BASE}/chat/stream?query=${encodeURIComponent(query)}`;
   let cancelled = false;
-  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) })
+
+  fetch(url)
     .then(async (res) => {
-      if (!res.ok) { const e = await res.json().catch(() => ({ detail: res.statusText })); onError(e.detail || "Stream failed"); return; }
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({ detail: res.statusText }));
+        onError(e.detail || "Stream failed");
+        return;
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       while (true) {
@@ -44,6 +49,7 @@ function chatStream(query, onToken, onDone, onError) {
       onDone();
     })
     .catch((e) => { if (!cancelled) onError(e.message); });
+
   return () => { cancelled = true; };
 }
 async function uploadDocuments(files, chunkSize = 512, chunkOverlap = 64) {
